@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from contract import GenerateInput, InspectInput, ListAlertsInput
-from plugin import generate_outage, inspect_service, list_alerts
+from contract import GenerateInput, InspectInput, InspectManyInput, ListAlertsInput
+from plugin import generate_outage, inspect_service, inspect_services, list_alerts
 from plugin.outage import closure, layer_sizes, outage, reverse
 
 
@@ -107,3 +107,21 @@ def test_refuses_unknown_services_and_bad_files(tmp_path: Path) -> None:
         (tmp_path / name).write_text(text)
         with pytest.raises(ValueError):
             list_alerts(ListAlertsInput(file=name), tmp_path)
+
+
+def test_inspects_many_services_in_one_call(tmp_path: Path) -> None:
+    made = generate_outage(GenerateInput(seed=3, services=40, destination="outages"), tmp_path)
+    graph = json.loads((tmp_path / made.file).read_text())["services"]
+    names = sorted(graph)[::-1]
+    seen = inspect_services(InspectManyInput(file=made.file, services=names), tmp_path)
+    assert [item.service for item in seen.services] == names
+    for item in seen.services:
+        one = inspect_service(InspectInput(file=made.file, service=item.service), tmp_path)
+        assert (item.depends_on, item.dependents, item.alert) == (one.depends_on, one.dependents, one.alert)
+
+
+@pytest.mark.parametrize("names", [[], ["search-db", "search-db"], ["nope-svc"], [f"s{i}" for i in range(81)]])
+def test_refuses_bad_service_lists(tmp_path: Path, names: list[str]) -> None:
+    made = generate_outage(GenerateInput(seed=1, services=12, destination="outages"), tmp_path)
+    with pytest.raises(ValueError):
+        inspect_services(InspectManyInput(file=made.file, services=names), tmp_path)

@@ -13,7 +13,7 @@ from mcp.server.stdio import stdio_server
 from slimconfig import build_output, output_schema, plain_output
 
 from contract import TOOLS, Tool
-from plugin import generate_outage, inspect_service, list_alerts
+from plugin import generate_outage, inspect_service, inspect_services, list_alerts
 
 server = Server("triage-root-cause")
 # NanoAgent names the one folder this plugin may write to.
@@ -23,6 +23,7 @@ IMPLEMENTATIONS = {
     Tool.GENERATE_OUTAGE: generate_outage,
     Tool.LIST_ALERTS: list_alerts,
     Tool.INSPECT_SERVICE: inspect_service,
+    Tool.INSPECT_SERVICES: inspect_services,
 }
 
 

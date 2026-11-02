@@ -1,7 +1,7 @@
 _ > nanoagent.plugin.v0001.ManifestConfig:
 id: triage-root-cause
 name: Triage Root Cause
-version: 0.1.1
+version: 0.1.2
 status: ready
 spec: nanoagent.plugin/v0001
 
@@ -23,6 +23,8 @@ tools > dict[contract.Tool, nanoagent.plugin.v0001.ToolConfig]:
     description: List every alerting service in an outage file with its alert time, earliest first
   inspect_service:
     description: Show one service's direct dependencies, direct dependents and alert time
+  inspect_services:
+    description: Show the direct dependencies, direct dependents and alert time of up to 80 services in one call
 
 # One entry per contract.Task; its input and output classes are contract.TASKS's.
 tasks > dict[contract.Task, nanoagent.plugin.v0001.TaskConfig]:
@@ -47,12 +49,12 @@ tasks > dict[contract.Task, nanoagent.plugin.v0001.TaskConfig]:
   find-root-cause:
     description: Find the service whose failure explains an outage's alerts
     runner: agent
-    tools: [generate_outage, list_alerts, inspect_service]
+    tools: [generate_outage, list_alerts, inspect_services]
     reference: null
     instructions: |-
       Generate the outage for the seed and service count with generate_outage, destination outages.
       Call list_alerts on that file to see which services are alerting. Most alerts are symptoms: a service alerts when something it depends on fails.
-      You cannot see the whole graph at once. Call inspect_service on that file, one service at a time, to follow depends_on and dependents links and learn which alerting services transitively depend on which.
+      You cannot see the whole graph at once. Map it with inspect_services, which takes up to 80 service names per call: first pass every alerting service, then pass every depends_on and dependents name you have not inspected yet, and repeat until a call brings no new names. This takes a few calls, not one per service.
       Apply this rule: a candidate root is an alerting service none of whose transitive dependencies alerts. Its blast radius is the number of alerting services that transitively depend on it. The root cause is the candidate with the largest blast radius; ties go to the earlier alert, then the name.
       The earliest alert is not always the root cause.
-      Submit the file as generate_outage returned it, root_cause, blast_radius as the root cause's blast radius, and other_candidates as every other candidate root, sorted by name (an empty list when there is none).
+      Your last action must be one call to submit: the file as generate_outage returned it, root_cause, blast_radius as the root cause's blast radius, and other_candidates as every other candidate root, sorted by name (an empty list when there is none). Never end with a text reply instead of submit.

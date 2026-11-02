@@ -4,8 +4,8 @@ A `nanoagent.plugin/v0001` plugin for incident triage. In a microservice
 outage most alerts are symptoms: a service alerts because something it calls
 has failed. This plugin writes a seeded outage, a service dependency graph
 where one service fails and everything that depends on it alerts, plus one or
-two unrelated noise alerts. An agent then walks the graph one service at a
-time to find the failure that explains the others.
+two unrelated noise alerts. An agent then maps the graph in a few batched
+calls to find the failure that explains the others.
 
 ## Tools
 
@@ -14,6 +14,7 @@ time to find the failure that explains the others.
 | `generate_outage` | Writes the outage for a seed and service count to `<destination>/outage-<seed>-<services>.json` and returns its path, service count, alerting count and SHA-256 | `src/plugin/outage.py` |
 | `list_alerts` | Every alerting service with its alert time, sorted by alert time, then name | `src/plugin/alerts.py` |
 | `inspect_service` | One service's sorted direct dependencies, sorted direct dependents and alert time (empty when none); unknown services are refused | `src/plugin/inspect_service.py` |
+| `inspect_services` | The same for 1 to 80 different services in one call, in the order asked | `src/plugin/inspect_service.py` |
 
 ### Tasks
 
@@ -22,7 +23,7 @@ time to find the failure that explains the others.
 | `generate-outage` | Generates a seeded outage | `tool`, with `generate_outage` |
 | `list-alerts` | Lists an outage's alerts | `tool`, with `list_alerts` |
 | `inspect-service` | Inspects one service of an outage | `tool`, with `inspect_service` |
-| `find-root-cause` | Finds the service whose failure explains the outage, its blast radius and the other candidate roots | `agent`, with `generate_outage`, `list_alerts` and `inspect_service` |
+| `find-root-cause` | Finds the service whose failure explains the outage, its blast radius and the other candidate roots | `agent`, with `generate_outage`, `list_alerts` and `inspect_services` |
 
 The file is `{"services": {name: {"depends_on": [names], "alert": "2026-10-31T12:03:10Z" or null}}}`,
 written with sorted keys and fixed separators so the same seed and service
@@ -73,6 +74,8 @@ checks:
   in alert-time order, ties by name.
 - `inspect_service`: `depends_on`, `dependents` and `alert` are exactly the
   file's, sorted.
+- `inspect_services`: the services are the ones asked for, in that order, and
+  each one's `depends_on`, `dependents` and `alert` are exactly the file's.
 - `find-root-cause`: the file is the seed's outage, and `root_cause`,
   `blast_radius` and the set of `other_candidates` exactly match the rule
   above, recomputed with the verifier's own graph code. The score is the
@@ -87,5 +90,5 @@ uv run ruff check .
 ```
 
 NanoAgent passes the folder the plugin may write to as `NANOAGENT_WORKSPACE`.
-Outages are written there; `list_alerts` and `inspect_service` read an outage
+Outages are written there; `list_alerts`, `inspect_service` and `inspect_services` read an outage
 by its path inside it.

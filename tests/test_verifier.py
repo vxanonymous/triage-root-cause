@@ -8,8 +8,8 @@ import pytest
 from slimconfig import build_output, plain_output
 
 import verifier
-from contract import TASKS, TOOLS, GenerateInput, InspectInput, ListAlertsInput, Task, Tool
-from plugin import generate_outage, inspect_service, list_alerts
+from contract import TASKS, TOOLS, GenerateInput, InspectInput, InspectManyInput, ListAlertsInput, Task, Tool
+from plugin import generate_outage, inspect_service, inspect_services, list_alerts
 
 
 # The verifier gets contract instances, as NanoAgent's sandbox builds them from JSON.
@@ -40,6 +40,11 @@ def alerts(workspace: Path, file: str) -> tuple[dict, dict]:
 def inspected(workspace: Path, file: str, service: str) -> tuple[dict, dict]:
     given = {"file": file, "service": service}
     return given, plain_output(inspect_service(build_output(given, InspectInput), workspace))
+
+
+def inspected_many(workspace: Path, file: str, names: list[str]) -> tuple[dict, dict]:
+    given = {"file": file, "services": names}
+    return given, plain_output(inspect_services(build_output(given, InspectManyInput), workspace))
 
 
 def write_outage(workspace: Path, services: dict, name: str = "outages/outage-0-8.json") -> str:
@@ -220,7 +225,97 @@ def test_checks_what_the_types_cannot_say() -> None:
         assert verify_input("inspect_service", good | bad)["valid"] is False, bad
 
 
+# inspect_services
+
+
+def test_approves_a_batch_inspection(tmp_path: Path) -> None:
+    _, made = generated(tmp_path, 3, 40)
+    names = sorted(json.loads((tmp_path / made["file"]).read_text())["services"])
+    given, seen = inspected_many(tmp_path, made["file"], names)
+    assert verify_output("inspect_services", given, seen, tmp_path)["valid"] is True
+    given, seen = inspected_many(tmp_path, made["file"], names[:1])
+    assert verify_output("inspect_services", given, seen, tmp_path)["valid"] is True
+
+
+def test_refuses_a_wrong_batch_inspection(tmp_path: Path) -> None:
+    _, made = generated(tmp_path)
+    given, seen = inspected_many(tmp_path, made["file"], ["search-db", "messages-svc"])
+    first, second = seen["services"]
+    assert first["dependents"]
+    cases = {
+        "dependents": seen | {"services": [first | {"dependents": first["dependents"][1:]}, second]},
+        "depends_on": seen | {"services": [first | {"depends_on": ["orders-api"]}, second]},
+        "alert": seen | {"services": [first | {"alert": ""}, second]},
+        "order": seen | {"services": [second, first]},
+        "missing": seen | {"services": [first]},
+        "file": seen | {"file": "outages/other.json"},
+    }
+    for name, output in cases.items():
+        assert verify_output("inspect_services", given, output, tmp_path)["valid"] is False, name
+    ghost = given | {"services": ["ghost-svc"]}
+    assert "not a service" in verify_output("inspect_services", ghost, seen, tmp_path)["message"]
+
+
+def test_batch_inputs_are_checked() -> None:
+    good = {"file": "outages/o.json", "services": ["orders-db"]}
+    assert verify_input("inspect_services", good)["valid"] is True
+    assert verify_input("inspect_services", good | {"services": [f"s{i}" for i in range(80)]})["valid"] is True
+    for bad in (
+        {"services": []},
+        {"services": [f"s{i}" for i in range(81)]},
+        {"services": ["a", "a"]},
+        {"services": [" "]},
+        {"file": "../o.json"},
+    ):
+        assert verify_input("inspect_services", good | bad)["valid"] is False, bad
+
+
 # find-root-cause
+
+
+def root_cause_in_batches(workspace: Path, seed: int, services: int) -> tuple[dict, dict, int]:
+    """What a correct agent submits following the instructions: inspect_services in rounds until no new names."""
+    _, made = generated(workspace, seed, services)
+    file = made["file"]
+    _, listed = alerts(workspace, file)
+    alerting = {alert["service"]: alert["alert"] for alert in listed["alerts"]}
+    seen: dict[str, dict] = {}
+    pending, calls = sorted(alerting), 0
+    while pending:
+        calls += 1
+        for item in inspected_many(workspace, file, pending)[1]["services"]:
+            seen[item["service"]] = item
+        pending = sorted({n for item in seen.values() for n in item["depends_on"] + item["dependents"]} - set(seen))
+
+    def walk(name: str, link: str) -> set[str]:
+        found, stack = set(), [name]
+        while stack:
+            for following in seen[stack.pop()][link]:
+                if following not in found:
+                    found.add(following)
+                    stack.append(following)
+        return found
+
+    blasts = {
+        n: len(walk(n, "dependents") & set(alerting)) for n in alerting if not walk(n, "depends_on") & set(alerting)
+    }
+    root = min(blasts, key=lambda name: (-blasts[name], alerting[name], name))
+    output = {
+        "file": file,
+        "root_cause": root,
+        "blast_radius": blasts[root],
+        "other_candidates": sorted(name for name in blasts if name != root),
+    }
+    return {"seed": seed, "services": services}, output, calls
+
+
+@pytest.mark.parametrize(("seed", "services"), [(1, 12), (3, 40), (6, 80), (5, 8)])
+def test_the_batch_walk_finds_the_root_in_a_few_calls(tmp_path: Path, seed: int, services: int) -> None:
+    arguments, output, calls = root_cause_in_batches(tmp_path, seed, services)
+    _, walked = root_cause(tmp_path / "walk", seed, services)
+    assert output == walked
+    assert verify_task("find-root-cause", arguments, output, tmp_path)["score"] == 1.0
+    assert calls <= 6
 
 
 def root_cause(workspace: Path, seed: int = 1, services: int = 12) -> tuple[dict, dict]:

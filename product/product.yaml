@@ -1,6 +1,6 @@
 _ > nanoagent.plugin.v0001.ProductConfig:
 tagline: "Find the one failing service behind a wall of alerts"
-summary: "Generates a seeded microservice outage where one service fails and everything that depends on it alerts, plus a few unrelated alerts. An agent walks the dependency graph one service at a time to find the failure that explains the rest."
+summary: "Generates a seeded microservice outage where one service fails and everything that depends on it alerts, plus a few unrelated alerts. An agent maps the dependency graph in a few batched lookups to find the failure that explains the rest."
 highlights:
   - "The verifier recomputes the root cause from the outage file with its own graph code"
   - "Noise alerts often fire before the real failure, so the earliest alert is a trap"
@@ -8,5 +8,5 @@ highlights:
 steps:
   - "Generate an outage from a seed and a service count"
   - "List the alerting services"
-  - "Inspect services one at a time to follow their dependencies"
+  - "Inspect services in batches to follow their dependencies"
   - "Submit the root cause, its blast radius and the other candidate roots"

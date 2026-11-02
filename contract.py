@@ -11,6 +11,7 @@ class Tool(Enum):
     GENERATE_OUTAGE = "generate_outage"
     LIST_ALERTS = "list_alerts"
     INSPECT_SERVICE = "inspect_service"
+    INSPECT_SERVICES = "inspect_services"
 
 
 class Task(Enum):
@@ -77,6 +78,30 @@ class InspectOutput(Output):
 
 
 @dataclass
+class InspectManyInput(Output):
+    file: Annotated[str, FILE]
+    services: Annotated[
+        list[str], "The names of 1 to 80 different services in the file, e.g. [checkout-api, orders-db]"
+    ]
+
+
+@dataclass
+class Service(Output):
+    service: Annotated[str, "The service's name"]
+    depends_on: Annotated[list[str], "The services it calls directly, sorted by name"]
+    dependents: Annotated[list[str], "The services that call it directly, sorted by name"]
+    alert: Annotated[
+        str, "When the service started alerting, UTC, e.g. 2026-10-31T12:03:10Z; empty when it is not alerting"
+    ]
+
+
+@dataclass
+class InspectManyOutput(Output):
+    file: Annotated[str, "The outage file, as given"]
+    services: Annotated[list[Service], "Each service asked for, in the order asked"]
+
+
+@dataclass
 class RootCauseInput(Output):
     seed: Annotated[int, SEED]
     services: Annotated[int, SERVICES]
@@ -96,6 +121,7 @@ TOOLS = {
     Tool.GENERATE_OUTAGE: (GenerateInput, GenerateOutput),
     Tool.LIST_ALERTS: (ListAlertsInput, ListAlertsOutput),
     Tool.INSPECT_SERVICE: (InspectInput, InspectOutput),
+    Tool.INSPECT_SERVICES: (InspectManyInput, InspectManyOutput),
 }
 TASKS = {
     Task.GENERATE_OUTAGE: (GenerateInput, GenerateOutput),
