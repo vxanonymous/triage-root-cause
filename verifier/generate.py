@@ -37,4 +37,6 @@ def verify_output(input_value, output_value, workspace):
     alerting = sum(1 for entry in services.values() if entry["alert"] is not None)
     if output_value.alerting != alerting:
         return result(False, f"alerting is {output_value.alerting}, but {alerting} services alert")
+    if output_value.names != sorted(services):
+        return result(False, "names is not every service in the file, sorted")
     return result(True, f"{expected} holds {len(services)} services, {alerting} alerting", sha256=digest)

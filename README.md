@@ -11,7 +11,7 @@ calls to find the failure that explains the others.
 
 | Tool | Does | Code |
 |---|---|---|
-| `generate_outage` | Writes the outage for a seed and service count to `<destination>/outage-<seed>-<services>.json` and returns its path, service count, alerting count and SHA-256 | `src/plugin/outage.py` |
+| `generate_outage` | Writes the outage for a seed and service count to `<destination>/outage-<seed>-<services>.json` and returns its path, service count, alerting count, SHA-256 and every service name | `src/plugin/outage.py` |
 | `list_alerts` | Every alerting service with its alert time, sorted by alert time, then name | `src/plugin/alerts.py` |
 | `inspect_service` | One service's sorted direct dependencies, sorted direct dependents and alert time (empty when none); unknown services are refused | `src/plugin/inspect_service.py` |
 | `inspect_services` | The same for 1 to 80 different services in one call, in the order asked | `src/plugin/inspect_service.py` |

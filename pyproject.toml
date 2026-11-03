@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "nanoagent-triage-root-cause"
-version = "0.1.2"
+version = "0.1.3"
 description = "Root cause search over a seeded microservice outage graph: a NanoAgent plugin"
 requires-python = ">=3.12"
 dependencies = ["mcp>=1.27,<2", "slimconfig"]

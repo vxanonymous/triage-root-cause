@@ -194,6 +194,7 @@ def generate_outage(given: GenerateInput, workspace: Path) -> GenerateOutput:
         file=relative.as_posix(),
         services=len(data["services"]),
         alerting=sum(1 for entry in data["services"].values() if entry["alert"] is not None),
+        names=sorted(data["services"]),
         sha256=hashlib.sha256(payload).hexdigest(),
     )
 

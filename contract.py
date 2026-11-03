@@ -40,6 +40,7 @@ class GenerateOutput(Output):
     file: Annotated[str, "The outage, relative to the plugin workspace: <destination>/outage-<seed>-<services>.json"]
     services: Annotated[int, "How many services the file holds"]
     alerting: Annotated[int, "How many of them have an alert"]
+    names: Annotated[list[str], "Every service in the file, sorted by name"]
     sha256: Annotated[str, "The SHA-256 of the file's bytes, lowercase hex"]
 
 

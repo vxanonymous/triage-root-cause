@@ -80,6 +80,7 @@ def test_approves_the_smallest_and_largest_outage(tmp_path: Path, services: int)
         ({"sha256": "0" * 64}, "sha256"),
         ({"services": 11}, "services"),
         ({"alerting": 1}, "alerting"),
+        ({"names": ["search-db"]}, "names"),
     ],
 )
 def test_refuses_a_wrong_generate_output(tmp_path: Path, changes: dict, message: str) -> None:
@@ -105,7 +106,7 @@ def test_refuses_a_cyclic_or_dangling_outage_even_with_its_own_hash(tmp_path: Pa
     for graph, message in ((cyclic, "cycle"), (dangling, "unknown service")):
         file = write_outage(tmp_path, graph)
         digest = hashlib.sha256((tmp_path / file).read_bytes()).hexdigest()
-        made = {"file": file, "services": 8, "alerting": 0, "sha256": digest}
+        made = {"file": file, "services": 8, "alerting": 0, "sha256": digest, "names": names}
         assert message in verify_output("generate_outage", given, made, tmp_path)["message"]
 
 
@@ -307,6 +308,43 @@ def root_cause_in_batches(workspace: Path, seed: int, services: int) -> tuple[di
         "other_candidates": sorted(name for name in blasts if name != root),
     }
     return {"seed": seed, "services": services}, output, calls
+
+
+def root_cause_in_one_lookup(workspace: Path, seed: int, services: int) -> tuple[dict, dict]:
+    """The instructions' path: generate, list the alerts, one inspect_services call with every name, submit."""
+    _, made = generated(workspace, seed, services)
+    _, listed = alerts(workspace, made["file"])
+    _, seen = inspected_many(workspace, made["file"], made["names"])
+    graph = {item["service"]: item for item in seen["services"]}
+    alerting = {alert["service"]: alert["alert"] for alert in listed["alerts"]}
+
+    def walk(name: str, link: str) -> set[str]:
+        found, stack = set(), [name]
+        while stack:
+            for following in graph[stack.pop()][link]:
+                if following not in found:
+                    found.add(following)
+                    stack.append(following)
+        return found
+
+    blasts = {
+        n: len(walk(n, "dependents") & set(alerting)) for n in alerting if not walk(n, "depends_on") & set(alerting)
+    }
+    root = min(blasts, key=lambda name: (-blasts[name], alerting[name], name))
+    output = {
+        "file": made["file"],
+        "root_cause": root,
+        "blast_radius": blasts[root],
+        "other_candidates": sorted(name for name in blasts if name != root),
+    }
+    return {"seed": seed, "services": services}, output
+
+
+@pytest.mark.parametrize(("seed", "services"), [(1, 12), (3, 40), (7, 40), (6, 80), (9, 80), (5, 8)])
+def test_one_lookup_of_every_name_finds_the_root(tmp_path: Path, seed: int, services: int) -> None:
+    arguments, output = root_cause_in_one_lookup(tmp_path, seed, services)
+    assert verify_task("find-root-cause", arguments, output, tmp_path)["score"] == 1.0
+    assert output == root_cause(tmp_path / "walk", seed, services)[1]
 
 
 @pytest.mark.parametrize(("seed", "services"), [(1, 12), (3, 40), (6, 80), (5, 8)])
