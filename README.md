@@ -4,8 +4,8 @@ A `nanoagent.plugin/v0001` plugin for incident triage. In a microservice
 outage most alerts are symptoms: a service alerts because something it calls
 has failed. This plugin writes a seeded outage, a service dependency graph
 where one service fails and everything that depends on it alerts, plus one or
-two unrelated noise alerts. An agent then maps the graph in a few batched
-calls to find the failure that explains the others.
+two unrelated noise alerts. An agent traces which alerts sit above and below each
+other and applies a stated rule to find the failure that explains the others.
 
 ## Tools
 
@@ -15,6 +15,7 @@ calls to find the failure that explains the others.
 | `list_alerts` | Every alerting service with its alert time, sorted by alert time, then name | `src/plugin/alerts.py` |
 | `inspect_service` | One service's sorted direct dependencies, sorted direct dependents and alert time (empty when none); unknown services are refused | `src/plugin/inspect_service.py` |
 | `inspect_services` | The same for 1 to 80 different services in one call, in the order asked | `src/plugin/inspect_service.py` |
+| `trace_services` | For 1 to 80 services: each one's alert time, the alerting services it transitively depends on and the alerting services that transitively depend on it, never itself | `src/plugin/trace.py` |
 
 ### Tasks
 
@@ -23,7 +24,7 @@ calls to find the failure that explains the others.
 | `generate-outage` | Generates a seeded outage | `tool`, with `generate_outage` |
 | `list-alerts` | Lists an outage's alerts | `tool`, with `list_alerts` |
 | `inspect-service` | Inspects one service of an outage | `tool`, with `inspect_service` |
-| `find-root-cause` | Finds the service whose failure explains the outage, its blast radius and the other candidate roots | `agent`, with `generate_outage`, `list_alerts` and `inspect_services` |
+| `find-root-cause` | Finds the service whose failure explains the outage, its blast radius and the other candidate roots | `agent`, with `generate_outage`, `list_alerts` and `trace_services` |
 
 The file is `{"services": {name: {"depends_on": [names], "alert": "2026-10-31T12:03:10Z" or null}}}`,
 written with sorted keys and fixed separators so the same seed and service
@@ -76,6 +77,9 @@ checks:
   file's, sorted.
 - `inspect_services`: the services are the ones asked for, in that order, and
   each one's `depends_on`, `dependents` and `alert` are exactly the file's.
+- `trace_services`: the services are the ones asked for, in that order, and
+  each one's alert and sorted alerting transitive dependencies and dependents
+  match the verifier's own graph walk.
 - `find-root-cause`: the file is the seed's outage, and `root_cause`,
   `blast_radius` and the set of `other_candidates` exactly match the rule
   above, recomputed with the verifier's own graph code. The score is the

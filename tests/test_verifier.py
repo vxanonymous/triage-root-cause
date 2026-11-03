@@ -8,8 +8,18 @@ import pytest
 from slimconfig import build_output, plain_output
 
 import verifier
-from contract import TASKS, TOOLS, GenerateInput, InspectInput, InspectManyInput, ListAlertsInput, Task, Tool
-from plugin import generate_outage, inspect_service, inspect_services, list_alerts
+from contract import (
+    TASKS,
+    TOOLS,
+    GenerateInput,
+    InspectInput,
+    InspectManyInput,
+    ListAlertsInput,
+    Task,
+    Tool,
+    TraceInput,
+)
+from plugin import generate_outage, inspect_service, inspect_services, list_alerts, trace_services
 
 
 # The verifier gets contract instances, as NanoAgent's sandbox builds them from JSON.
@@ -45,6 +55,11 @@ def inspected(workspace: Path, file: str, service: str) -> tuple[dict, dict]:
 def inspected_many(workspace: Path, file: str, names: list[str]) -> tuple[dict, dict]:
     given = {"file": file, "services": names}
     return given, plain_output(inspect_services(build_output(given, InspectManyInput), workspace))
+
+
+def traced(workspace: Path, file: str, names: list[str]) -> tuple[dict, dict]:
+    given = {"file": file, "services": names}
+    return given, plain_output(trace_services(build_output(given, TraceInput), workspace))
 
 
 def write_outage(workspace: Path, services: dict, name: str = "outages/outage-0-8.json") -> str:
@@ -269,6 +284,79 @@ def test_batch_inputs_are_checked() -> None:
         {"file": "../o.json"},
     ):
         assert verify_input("inspect_services", good | bad)["valid"] is False, bad
+
+
+# trace_services
+
+
+def test_approves_traces(tmp_path: Path) -> None:
+    _, made = generated(tmp_path, 7, 40)
+    given, seen = traced(tmp_path, made["file"], made["names"])
+    assert verify_output("trace_services", given, seen, tmp_path)["valid"] is True
+    given, seen = traced(tmp_path, made["file"], ["cart-db"])
+    assert seen["services"][0]["alerting_dependents"] and not seen["services"][0]["alerting_dependencies"]
+    assert verify_output("trace_services", given, seen, tmp_path)["valid"] is True
+
+
+def test_refuses_wrong_traces(tmp_path: Path) -> None:
+    _, made = generated(tmp_path, 7, 40)
+    given, seen = traced(tmp_path, made["file"], ["cart-db", "sessions-web"])
+    root, leaf = seen["services"]
+    assert leaf["alerting_dependencies"]
+    cases = {
+        "dependents dropped": [root | {"alerting_dependents": root["alerting_dependents"][1:]}, leaf],
+        "self counted": [root | {"alerting_dependents": sorted([*root["alerting_dependents"], "cart-db"])}, leaf],
+        "unsorted": [root | {"alerting_dependents": root["alerting_dependents"][::-1]}, leaf],
+        "dependencies hidden": [root, leaf | {"alerting_dependencies": []}],
+        "alert": [root | {"alert": ""}, leaf],
+        "order": [leaf, root],
+        "missing": [root],
+    }
+    for name, items in cases.items():
+        assert verify_output("trace_services", given, seen | {"services": items}, tmp_path)["valid"] is False, name
+    assert verify_output("trace_services", given, seen | {"file": "outages/x.json"}, tmp_path)["valid"] is False
+    ghost = given | {"services": ["ghost-svc"]}
+    assert "not a service" in verify_output("trace_services", ghost, seen, tmp_path)["message"]
+
+
+def test_trace_inputs_are_checked() -> None:
+    good = {"file": "outages/o.json", "services": ["orders-db"]}
+    assert verify_input("trace_services", good)["valid"] is True
+    for bad in (
+        {"services": []},
+        {"services": ["a", "a"]},
+        {"services": [f"s{i}" for i in range(81)]},
+        {"file": "../o"},
+    ):
+        assert verify_input("trace_services", good | bad)["valid"] is False, bad
+
+
+def root_cause_from_traces(workspace: Path, seed: int, services: int) -> tuple[dict, dict]:
+    """The instructions' path: generate, then list_alerts and trace_services together, then submit."""
+    _, made = generated(workspace, seed, services)
+    _, listed = alerts(workspace, made["file"])
+    _, seen = traced(workspace, made["file"], made["names"])
+    alert = {item["service"]: item["alert"] for item in listed["alerts"]}
+    blasts = {
+        item["service"]: len(item["alerting_dependents"])
+        for item in seen["services"]
+        if item["alert"] and not item["alerting_dependencies"]
+    }
+    root = min(blasts, key=lambda name: (-blasts[name], alert[name], name))
+    output = {
+        "file": made["file"],
+        "root_cause": root,
+        "blast_radius": blasts[root],
+        "other_candidates": sorted(name for name in blasts if name != root),
+    }
+    return {"seed": seed, "services": services}, output
+
+
+@pytest.mark.parametrize(("seed", "services"), [(1, 12), (3, 40), (7, 40), (6, 80), (9, 80), (5, 8), (2, 60)])
+def test_reading_the_traces_finds_the_root(tmp_path: Path, seed: int, services: int) -> None:
+    arguments, output = root_cause_from_traces(tmp_path, seed, services)
+    assert verify_task("find-root-cause", arguments, output, tmp_path)["score"] == 1.0
+    assert output == root_cause(tmp_path / "walk", seed, services)[1]
 
 
 # find-root-cause

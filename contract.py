@@ -12,6 +12,7 @@ class Tool(Enum):
     LIST_ALERTS = "list_alerts"
     INSPECT_SERVICE = "inspect_service"
     INSPECT_SERVICES = "inspect_services"
+    TRACE_SERVICES = "trace_services"
 
 
 class Task(Enum):
@@ -103,6 +104,34 @@ class InspectManyOutput(Output):
 
 
 @dataclass
+class TraceInput(Output):
+    file: Annotated[str, FILE]
+    services: Annotated[
+        list[str], "The names of 1 to 80 different services in the file, e.g. [checkout-api, orders-db]"
+    ]
+
+
+@dataclass
+class Trace(Output):
+    service: Annotated[str, "The service's name"]
+    alert: Annotated[
+        str, "When the service started alerting, UTC, e.g. 2026-10-31T12:03:10Z; empty when it is not alerting"
+    ]
+    alerting_dependencies: Annotated[
+        list[str], "Every alerting service it transitively depends on, sorted by name; never itself"
+    ]
+    alerting_dependents: Annotated[
+        list[str], "Every alerting service that transitively depends on it, sorted by name; never itself"
+    ]
+
+
+@dataclass
+class TraceOutput(Output):
+    file: Annotated[str, "The outage file, as given"]
+    services: Annotated[list[Trace], "Each service asked for, in the order asked"]
+
+
+@dataclass
 class RootCauseInput(Output):
     seed: Annotated[int, SEED]
     services: Annotated[int, SERVICES]
@@ -111,8 +140,12 @@ class RootCauseInput(Output):
 @dataclass
 class RootCauseOutput(Output):
     file: Annotated[str, "The outage generated for the seed and service count, outages/outage-<seed>-<services>.json"]
-    root_cause: Annotated[str, "The candidate root with the largest blast radius, ties to the earlier alert, then name"]
-    blast_radius: Annotated[int, "How many alerting services transitively depend on the root cause"]
+    root_cause: Annotated[
+        str, "The candidate root with the largest blast radius, ties to the earlier alert, then the name"
+    ]
+    blast_radius: Annotated[
+        int, "How many alerting services transitively depend on the root cause, not counting the root cause itself"
+    ]
     other_candidates: Annotated[
         list[str], "Every other candidate root (an alerting service with no alerting transitive dependency), sorted"
     ]
@@ -123,6 +156,7 @@ TOOLS = {
     Tool.LIST_ALERTS: (ListAlertsInput, ListAlertsOutput),
     Tool.INSPECT_SERVICE: (InspectInput, InspectOutput),
     Tool.INSPECT_SERVICES: (InspectManyInput, InspectManyOutput),
+    Tool.TRACE_SERVICES: (TraceInput, TraceOutput),
 }
 TASKS = {
     Task.GENERATE_OUTAGE: (GenerateInput, GenerateOutput),

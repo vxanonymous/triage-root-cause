@@ -2,13 +2,14 @@
 
 from contract import Task, Tool
 
-from . import alerts, generate, inspect_service, inspect_services, root_cause
+from . import alerts, generate, inspect_service, inspect_services, root_cause, trace_services
 
 TOOLS = {
     Tool.GENERATE_OUTAGE: generate,
     Tool.LIST_ALERTS: alerts,
     Tool.INSPECT_SERVICE: inspect_service,
     Tool.INSPECT_SERVICES: inspect_services,
+    Tool.TRACE_SERVICES: trace_services,
 }
 
 

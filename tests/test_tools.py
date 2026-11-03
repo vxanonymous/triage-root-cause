@@ -3,8 +3,8 @@ from pathlib import Path
 
 import pytest
 
-from contract import GenerateInput, InspectInput, InspectManyInput, ListAlertsInput
-from plugin import generate_outage, inspect_service, inspect_services, list_alerts
+from contract import GenerateInput, InspectInput, InspectManyInput, ListAlertsInput, TraceInput
+from plugin import generate_outage, inspect_service, inspect_services, list_alerts, trace_services
 from plugin.outage import closure, layer_sizes, outage, reverse
 
 
@@ -125,3 +125,25 @@ def test_refuses_bad_service_lists(tmp_path: Path, names: list[str]) -> None:
     made = generate_outage(GenerateInput(seed=1, services=12, destination="outages"), tmp_path)
     with pytest.raises(ValueError):
         inspect_services(InspectManyInput(file=made.file, services=names), tmp_path)
+
+
+def test_traces_match_a_brute_force_closure(tmp_path: Path) -> None:
+    made = generate_outage(GenerateInput(seed=7, services=40, destination="outages"), tmp_path)
+    graph = json.loads((tmp_path / made.file).read_text())["services"]
+    alerting = {name for name, entry in graph.items() if entry["alert"]}
+
+    def below(name: str) -> set[str]:
+        return set(graph[name]["depends_on"]).union(*(below(n) for n in graph[name]["depends_on"]))
+
+    traced = trace_services(TraceInput(file=made.file, services=made.names), tmp_path).services
+    for item in traced:
+        assert item.alerting_dependencies == sorted(below(item.service) & alerting)
+        assert item.alerting_dependents == sorted(n for n in alerting if item.service in below(n))
+        assert item.service not in item.alerting_dependents + item.alerting_dependencies
+
+
+@pytest.mark.parametrize("names", [[], ["search-db", "search-db"], ["nope-svc"], [f"s{i}" for i in range(81)]])
+def test_refuses_bad_trace_lists(tmp_path: Path, names: list[str]) -> None:
+    made = generate_outage(GenerateInput(seed=1, services=12, destination="outages"), tmp_path)
+    with pytest.raises(ValueError):
+        trace_services(TraceInput(file=made.file, services=names), tmp_path)
